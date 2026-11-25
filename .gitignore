@@ -1,0 +1,37 @@
+# Byte-compiled / arquivos otimizados do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais (incluindo .venv e .venv-1 usados no projeto)
+.venv/
+.venv-1/
+venv/
+ENV/
+env/
+
+# Banco de dados SQLite local
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# VS Code e editores
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
+
+# Logs e builds
+*.log
+build/
+dist/
+*.egg-info/
