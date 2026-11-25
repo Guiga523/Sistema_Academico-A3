@@ -101,7 +101,7 @@ class TelaAluno(QWidget):
         self.lbl_detalhes.setObjectName("SubtituloAluno")
 
         self.tabela_notas = QTableWidget(0, 4)
-        self.tabela_notas.setHorizontalHeaderLabels(["Nota 1", "Nota 2", "Média", "Situação"])
+        self.tabela_notas.setHorizontalHeaderLabels(["Nota 1", "Nota 2","Frequência", "Média", "Situação"])
         self.tabela_notas.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.tabela_notas.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.tabela_notas.verticalHeader().setVisible(False)
@@ -136,6 +136,7 @@ class TelaAluno(QWidget):
         valores = [
             f"{dados['nota1']:.1f}",
             f"{dados['nota2']:.1f}",
+            f"{dados['frequencia']:.1f}%",
             f"{dados['media']:.1f}",
             dados["situacao"],
         ]

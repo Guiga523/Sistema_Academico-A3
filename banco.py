@@ -1,9 +1,9 @@
 import hashlib
+import hmac
 import os
 import re
 import sqlite3
 import unicodedata
-import hmac
 from pathlib import Path
 
 CAMINHO_DB = Path(__file__).resolve().parent / "sistema_academico.db"
@@ -45,7 +45,7 @@ def _normalizar_slug_nome(nome: str) -> str:
         return "aluno"
     if len(partes) == 1:
         return partes[0]
-    return f"".join(partes)
+    return f"{partes[0]}{partes[-1]}"
 
 
 def _gerar_email_aluno(conn: sqlite3.Connection, nome: str) -> str:
@@ -66,14 +66,21 @@ def _gerar_senha_inicial(matricula: str) -> str:
     return f"{matricula.strip().upper()}#{sufixo}"
 
 
-def _calcular_situacao(nota1: float, nota2: float) -> tuple[float, str]:
+def _calcular_situacao(
+    nota1: float, nota2: float, frequencia: float = 100.0
+) -> tuple[float, str]:
     media = round((nota1 + nota2) / 2, 2)
-    if media >= 7.0:
+    freq = round(frequencia, 1)
+
+    if freq < 75.0:
+        situacao = "Recuperação"
+    elif media >= 7.0:
         situacao = "Aprovado"
     elif media >= 5.0:
         situacao = "Recuperação"
     else:
         situacao = "Reprovado"
+
     return media, situacao
 
 
@@ -98,6 +105,7 @@ def inicializar_banco() -> None:
                 turma TEXT NOT NULL,
                 nota1 REAL NOT NULL DEFAULT 0.0,
                 nota2 REAL NOT NULL DEFAULT 0.0,
+                frequencia REAL NOT NULL DEFAULT 100.0,
                 FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE SET NULL
             );
             """
@@ -108,6 +116,11 @@ def inicializar_banco() -> None:
         }
         if "usuario_id" not in colunas:
             conn.execute("ALTER TABLE alunos ADD COLUMN usuario_id INTEGER;")
+
+        if "frequencia" not in colunas:
+            conn.execute(
+                "ALTER TABLE alunos ADD COLUMN frequencia REAL NOT NULL DEFAULT 100.0;"
+            )
 
         conn.execute(
             """
@@ -181,6 +194,7 @@ def adicionar_aluno(
     turma: str,
     nota1: float = 0.0,
     nota2: float = 0.0,
+    frequencia: float = 100.0,
 ) -> tuple[bool, str, dict | None]:
     nome_limpo = nome.strip()
     matricula_limpa = matricula.strip().upper()
@@ -192,6 +206,9 @@ def adicionar_aluno(
     for nota in (nota1, nota2):
         if nota < 0 or nota > 10:
             return False, "As notas devem estar entre 0.0 e 10.0.", None
+
+    if frequencia < 0 or frequencia > 100:
+        return False, "A frequência deve estar entre 0.0% e 100.0%.", None
 
     try:
         with conectar() as conn:
@@ -215,10 +232,18 @@ def adicionar_aluno(
 
             conn.execute(
                 """
-                INSERT INTO alunos (usuario_id, nome, matricula, turma, nota1, nota2)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO alunos (usuario_id, nome, matricula, turma, nota1, nota2, frequencia)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (usuario_id, nome_limpo, matricula_limpa, turma_limpa, nota1, nota2),
+                (
+                    usuario_id,
+                    nome_limpo,
+                    matricula_limpa,
+                    turma_limpa,
+                    nota1,
+                    nota2,
+                    frequencia,
+                ),
             )
 
         credenciais = {
@@ -237,7 +262,7 @@ def listar_alunos() -> list[dict]:
     with conectar() as conn:
         linhas = conn.execute(
             """
-            SELECT a.id, a.nome, a.matricula, a.turma, a.nota1, a.nota2, u.email
+            SELECT a.id, a.nome, a.matricula, a.turma, a.nota1, a.nota2, a.frequencia, u.email
             FROM alunos a
             LEFT JOIN usuarios u ON u.id = a.usuario_id
             ORDER BY a.nome ASC
@@ -246,7 +271,8 @@ def listar_alunos() -> list[dict]:
 
     resultado = []
     for linha in linhas:
-        media, situacao = _calcular_situacao(linha["nota1"], linha["nota2"])
+        freq = linha["frequencia"] if linha["frequencia"] is not None else 100.0
+        media, situacao = _calcular_situacao(linha["nota1"], linha["nota2"], freq)
         resultado.append(
             {
                 "id": linha["id"],
@@ -256,6 +282,7 @@ def listar_alunos() -> list[dict]:
                 "email": linha["email"] or "-",
                 "nota1": linha["nota1"],
                 "nota2": linha["nota2"],
+                "frequencia": freq,
                 "media": media,
                 "situacao": situacao,
             }
@@ -267,7 +294,7 @@ def buscar_notas_do_aluno(usuario_id: int) -> dict | None:
     with conectar() as conn:
         linha = conn.execute(
             """
-            SELECT nome, matricula, turma, nota1, nota2
+            SELECT nome, matricula, turma, nota1, nota2, frequencia
             FROM alunos
             WHERE usuario_id = ?
             """,
@@ -277,16 +304,45 @@ def buscar_notas_do_aluno(usuario_id: int) -> dict | None:
     if not linha:
         return None
 
-    media, situacao = _calcular_situacao(linha["nota1"], linha["nota2"])
+    freq = linha["frequencia"] if linha["frequencia"] is not None else 100.0
+    media, situacao = _calcular_situacao(linha["nota1"], linha["nota2"], freq)
     return {
         "nome": linha["nome"],
         "matricula": linha["matricula"],
         "turma": linha["turma"],
         "nota1": linha["nota1"],
         "nota2": linha["nota2"],
+        "frequencia": freq,
         "media": media,
         "situacao": situacao,
     }
+
+
+def atualizar_notas_e_frequencia(
+    aluno_id: int, nota1: float, nota2: float, frequencia: float
+) -> tuple[bool, str]:
+    for nota in (nota1, nota2):
+        if nota < 0 or nota > 10:
+            return False, "As notas devem estar entre 0.0 e 10.0."
+
+    if frequencia < 0 or frequencia > 100:
+        return False, "A frequência deve estar entre 0.0% e 100.0%."
+
+    try:
+        with conectar() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE alunos
+                SET nota1 = ?, nota2 = ?, frequencia = ?
+                WHERE id = ?
+                """,
+                (nota1, nota2, frequencia, aluno_id),
+            )
+            if cursor.rowcount == 0:
+                return False, "Aluno não encontrado."
+        return True, "Notas e frequência atualizadas com sucesso!"
+    except sqlite3.Error as erro:
+        return False, f"Erro ao atualizar dados: {erro}"
 
 
 def atualizar_notas_aluno(aluno_id: int, nota1: float, nota2: float) -> tuple[bool, str]:
@@ -296,17 +352,13 @@ def atualizar_notas_aluno(aluno_id: int, nota1: float, nota2: float) -> tuple[bo
 
     try:
         with conectar() as conn:
-            cursor = conn.execute(
-                """
-                UPDATE alunos
-                SET nota1 = ?, nota2 = ?
-                WHERE id = ?
-                """,
-                (nota1, nota2, aluno_id),
-            )
-            if cursor.rowcount == 0:
+            linha = conn.execute(
+                "SELECT frequencia FROM alunos WHERE id = ?", (aluno_id,)
+            ).fetchone()
+            if not linha:
                 return False, "Aluno não encontrado."
-        return True, "Notas atualizadas com sucesso!"
+            freq = linha["frequencia"] if linha["frequencia"] is not None else 100.0
+            return atualizar_notas_e_frequencia(aluno_id, nota1, nota2, freq)
     except sqlite3.Error as erro:
         return False, f"Erro ao atualizar notas: {erro}"
 

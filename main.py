@@ -4,6 +4,7 @@ from banco import inicializar_banco
 from sistema_notas import SistemaNotas
 from tela_aluno import TelaAluno
 from tela_login import TelaLogin
+from tela_professor import TelaProfessor
 
 
 def main():
@@ -17,8 +18,11 @@ def main():
     def abrir_sistema(usuario: dict):
         nonlocal janela_destino
         try:
-            if usuario["perfil"] == "Aluno":
+            perfil = usuario["perfil"]
+            if perfil == "Aluno":
                 janela_destino = TelaAluno(usuario)
+            elif perfil == "Professor":
+                janela_destino = TelaProfessor(usuario)
             else:
                 janela_destino = SistemaNotas(usuario)
             janela_destino.show()
